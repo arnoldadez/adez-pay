@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adez Pay - Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial; max-width: 700px; margin: 2rem auto; padding: 0 1rem; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .form-group { margin-bottom: 1rem; }
+    input { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 5px; }
+    button { padding: 10px 20px; background: #2e7d32; color: #fff; border: none; border-radius: 5px; cursor: pointer; }
+    .logout { background: #dc3545; }
+    #response { margin-top: 1rem; padding: 1rem; border-radius: 5px; display: none; }
+    .success { background: #d4edda; border: 1px solid #c3e6cb; }
+    .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+    #history { margin-top: 2rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+    .badge { padding: 3px 8px; border-radius: 10px; font-size: 12px; }
+    .badge-pending { background: #ffc107; }
+    .badge-success { background: #28a745; color: #fff; }
+    .badge-failed { background: #dc3545; color: #fff; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>💳 Dashboard</h1>
+    <div><span id="userName"></span> <button class="logout" onclick="logout()">Logout</button></div>
+  </div>
+
+  <h3>New Payment</h3>
+  <div class="form-group"><label>Phone (e.g. 254712345678)</label><input type="text" id="phone" placeholder="2547"></div>
+  <div class="form-group"><label>Amount (KES)</label><input type="number" id="amount" placeholder="10"></div>
+  <div class="form-group"><label>Account Reference</label><input type="text" id="accountRef" placeholder="INV-001"></div>
+  <button id="payBtn">Pay Now</button>
+
+  <div id="response"></div>
+
+  <div id="history">
+    <h3>📜 Transaction History</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Amount</th><th>Receipt</th><th>Date</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // Check if logged in
+    fetch('/api/auth/me').then(res => {
+      if(res.status === 401) window.location.href = '/';
+      return res.json();
+    }).then(data => {
+      document.getElementById('userName').innerText = `👋 ${data.user.name}`;
+    });
+
+    // Pay
+    document.getElementById('payBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('payBtn');
+      btn.disabled = true;
+      document.getElementById('response').style.display = 'none';
+
+      const res = await fetch('/api/stkpush', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: document.getElementById('phone').value,
+          amount: document.getElementById('amount').value,
+          accountRef: document.getElementById('accountRef').value || 'TestPayment'
+        })
+      });
+      const data = await res.json();
+      
+      const div = document.getElementById('response');
+      if(data.success) {
+        div.className = 'success';
+        div.innerHTML = `✅ STK Push sent! Check your phone.<br>Checkout ID: ${data.checkoutRequestID}`;
+      } else {
+        div.className = 'error';
+        div.innerHTML = `❌ ${data.error}`;
+      }
+      div.style.display = 'block';
+      btn.disabled = false;
+      loadHistory();
+    });
+
+    // Logout
+    function logout() {
+      fetch('/api/auth/logout', { method: 'POST' }).then(() => window.location.href = '/');
+    }
+
+    // Load History
+    async function loadHistory() {
+      const res = await fetch('/api/transactions');
+      const data = await res.json();
+      const tbody = document.getElementById('historyBody');
+      tbody.innerHTML = data.map(t => `
+        <tr>
+          <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+          <td>KES ${t.amount}</td>
+          <td>${t.mpesaReceiptNumber || '—'}</td>
+          <td>${new Date(t.createdAt).toLocaleString()}</td>
+        </tr>
+      `).join('');
+    }
+    loadHistory();
+  </script>
+</body>
+</html>
