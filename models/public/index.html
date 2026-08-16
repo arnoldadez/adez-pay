@@ -1,1 +1,62 @@
 
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adez Pay - Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial; max-width: 400px; margin: 3rem auto; padding: 0 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    input { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 5px; }
+    button { width: 100%; padding: 12px; background: #2e7d32; color: #fff; border: none; border-radius: 5px; cursor: pointer; }
+    .toggle { text-align: center; margin-top: 1rem; color: #2e7d32; cursor: pointer; }
+    #error { color: red; margin-top: 1rem; display: none; }
+  </style>
+</head>
+<body>
+  <h1>💳 Adez Pay</h1>
+  <h2 id="formTitle">Login</h2>
+  <div class="form-group"><label>Email</label><input type="email" id="email" placeholder="admin@example.com"></div>
+  <div class="form-group"><label>Password</label><input type="password" id="password" placeholder="******"></div>
+  <div class="form-group" id="nameGroup" style="display:none"><label>Full Name</label><input type="text" id="name" placeholder="John Doe"></div>
+  <button id="submitBtn">Login</button>
+  <div class="toggle" id="toggleBtn">Don't have an account? Register</div>
+  <div id="error"></div>
+
+  <script>
+    let isLogin = true;
+    const toggleBtn = document.getElementById('toggleBtn');
+    const formTitle = document.getElementById('formTitle');
+    const submitBtn = document.getElementById('submitBtn');
+    const nameGroup = document.getElementById('nameGroup');
+    const errorDiv = document.getElementById('error');
+
+    toggleBtn.addEventListener('click', () => {
+      isLogin = !isLogin;
+      formTitle.innerText = isLogin ? 'Login' : 'Register';
+      submitBtn.innerText = isLogin ? 'Login' : 'Register';
+      toggleBtn.innerText = isLogin ? "Don't have an account? Register" : "Already have an account? Login";
+      nameGroup.style.display = isLogin ? 'none' : 'block';
+    });
+
+    submitBtn.addEventListener('click', async () => {
+      errorDiv.style.display = 'none';
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const name = document.getElementById('name').value;
+
+      const url = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const body = isLogin ? { email, password } : { name, email, password };
+
+      const res = await fetch(url, { 
+        method: 'POST', 
+        headers:{'Content-Type':'application/json'}, 
+        body: JSON.stringify(body) 
+      });
+      const data = await res.json();
+      if (data.message || data.user) window.location.href = '/dashboard';
+      else { errorDiv.innerText = data.error; errorDiv.style.display = 'block'; }
+    });
+  </script>
+</body>
+</html>
