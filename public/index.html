@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Adez Pay - M-Pesa STK Push</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    input { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 5px; }
+    button { width: 100%; padding: 12px; background: #2e7d32; color: white; border: none; border-radius: 5px; font-size: 16px; cursor: pointer; }
+    button:disabled { background: #666; }
+    #response { margin-top: 1rem; padding: 1rem; border-radius: 5px; display: none; }
+    .success { background: #d4edda; border: 1px solid #c3e6cb; }
+    .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+    #history { margin-top: 2rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }
+    .badge { padding: 3px 8px; border-radius: 10px; font-size: 12px; }
+    .badge-pending { background: #ffc107; }
+    .badge-success { background: #28a745; color: white; }
+    .badge-failed { background: #dc3545; color: white; }
+  </style>
+</head>
+<body>
+  <h1>💳 Adez Pay</h1>
+  
+  <div class="form-group">
+    <label>Phone (e.g. 254712345678)</label>
+    <input type="text" id="phone" placeholder="254712345678" value="2547">
+  </div>
+  <div class="form-group">
+    <label>Amount (KES)</label>
+    <input type="number" id="amount" placeholder="10" value="1">
+  </div>
+  <div class="form-group">
+    <label>Account Reference</label>
+    <input type="text" id="accountRef" placeholder="INV-001">
+  </div>
+  <button id="payBtn">Pay Now</button>
+
+  <div id="response"></div>
+
+  <div id="history">
+    <h3>📜 Transaction History</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Amount</th><th>Receipt</th><th>Date</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const payBtn = document.getElementById('payBtn');
+    const responseDiv = document.getElementById('response');
+    
+    payBtn.addEventListener('click', async () => {
+      payBtn.disabled = true;
+      responseDiv.style.display = 'none';
+
+      const payload = {
+        phone: document.getElementById('phone').value,
+        amount: document.getElementById('amount').value,
+        accountRef: document.getElementById('accountRef').value || 'TestPayment'
+      };
+
+      try {
+        const res = await fetch('/api/stkpush', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          responseDiv.className = 'success';
+          responseDiv.innerHTML = `✅ STK Push sent! Check your phone.<br>Checkout ID: ${data.checkoutRequestID}`;
+        } else {
+          responseDiv.className = 'error';
+          responseDiv.innerHTML = `❌ ${data.error}`;
+        }
+      } catch (err) {
+        responseDiv.className = 'error';
+        responseDiv.innerHTML = '❌ Network error.';
+      }
+
+      responseDiv.style.display = 'block';
+      payBtn.disabled = false;
+      loadHistory();
+    });
+
+    async function loadHistory() {
+      const res = await fetch('/api/transactions');
+      const data = await res.json();
+      const tbody = document.getElementById('historyBody');
+      tbody.innerHTML = data.map(t => `
+        <tr>
+          <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+          <td>KES ${t.amount}</td>
+          <td>${t.mpesaReceiptNumber || '—'}</td>
+          <td>${new Date(t.createdAt).toLocaleString()}</td>
+        </tr>
+      `).join('');
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>
