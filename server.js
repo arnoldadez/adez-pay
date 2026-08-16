@@ -1,12 +1,22 @@
 const express = require('express');
 const axios = require('axios');
 const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const path = require('path');
 require('dotenv').config();
+
+const Transaction = require('./models/Transaction');
 
 const app = express();
 app.use(bodyParser.json());
+app.use(express.static('public')); // Serve frontend
 
-// ==================== UTILITY ====================
+// ==================== DB CONNECTION ====================
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error:', err));
+
+// ==================== UTILITIES ====================
 const getTimestamp = () => {
   const now = new Date();
   return now.getFullYear() +
@@ -21,7 +31,7 @@ const getPassword = (shortcode, passkey, timestamp) => {
   return Buffer.from(shortcode + passkey + timestamp).toString('base64');
 };
 
-// ==================== GET ACCESS TOKEN ====================
+// ==================== GET TOKEN ====================
 const getAccessToken = async () => {
   const auth = Buffer.from(
     `${process.env.CONSUMER_KEY}:${process.env.CONSUMER_SECRET}`
@@ -34,12 +44,11 @@ const getAccessToken = async () => {
   return response.data.access_token;
 };
 
-// ==================== STK PUSH ENDPOINT ====================
-app.post('/stkpush', async (req, res) => {
+// ==================== STK PUSH ====================
+app.post('/api/stkpush', async (req, res) => {
   try {
     const { phone, amount, accountRef, description } = req.body;
 
-    // Validate inputs
     if (!phone || !amount) {
       return res.status(400).json({ error: 'Phone and amount are required' });
     }
@@ -72,14 +81,22 @@ app.post('/stkpush', async (req, res) => {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    // Store CheckoutRequestID in DB here
-    console.log('STK Push sent:', response.data);
+    // Save to DB
+    await Transaction.create({
+      checkoutRequestID: response.data.CheckoutRequestID,
+      merchantRequestID: response.data.MerchantRequestID,
+      phone,
+      amount: Number(amount),
+      accountReference: accountRef || 'TestPayment',
+      transactionDesc: description || 'M-Pesa Payment',
+      status: 'PENDING'
+    });
+
     res.status(200).json({
       success: true,
       checkoutRequestID: response.data.CheckoutRequestID,
       responseCode: response.data.ResponseCode,
-      responseDescription: response.data.ResponseDescription,
-      merchantRequestID: response.data.MerchantRequestID
+      responseDescription: response.data.ResponseDescription
     });
 
   } catch (error) {
@@ -88,44 +105,49 @@ app.post('/stkpush', async (req, res) => {
   }
 });
 
-// ==================== CALLBACK HANDLER ====================
-app.post('/mpesa/callback', (req, res) => {
-  console.log('Callback received:', JSON.stringify(req.body, null, 2));
+// ==================== CALLBACK ====================
+app.post('/api/mpesa/callback', async (req, res) => {
+  console.log('Callback received');
 
   const { Body } = req.body;
   if (Body?.stkCallback) {
     const { ResultCode, ResultDesc, CheckoutRequestID, CallbackMetadata } = Body.stkCallback;
 
+    const updateData = {
+      status: ResultCode === 0 ? 'SUCCESS' : 'FAILED',
+      resultDesc: ResultDesc,
+      updatedAt: new Date()
+    };
+
     if (ResultCode === 0) {
-      // SUCCESS - parse metadata
       const meta = CallbackMetadata?.Item || [];
       const getMeta = (key) => meta.find(item => item.Name === key)?.Value;
-
-      const transaction = {
-        checkoutID: CheckoutRequestID,
-        amount: getMeta('Amount'),
-        mpesaReceipt: getMeta('MpesaReceiptNumber'),
-        phone: getMeta('PhoneNumber'),
-        date: getMeta('TransactionDate'),
-        result: 'SUCCESS'
-      };
-
-      console.log('✅ Payment successful:', transaction);
-      // Update DB with successful transaction here
-
-    } else {
-      // FAILED
-      console.log('❌ Payment failed:', ResultDesc);
-      // Update DB with failure here
+      updateData.mpesaReceiptNumber = getMeta('MpesaReceiptNumber');
+      updateData.transactionDate = getMeta('TransactionDate');
     }
+
+    await Transaction.findOneAndUpdate(
+      { checkoutRequestID: CheckoutRequestID },
+      updateData
+    );
   }
 
-  // Always respond with success to Safaricom
   res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
 });
 
-// ==================== START SERVER ====================
+// ==================== GET TRANSACTIONS ====================
+app.get('/api/transactions', async (req, res) => {
+  const transactions = await Transaction.find().sort({ createdAt: -1 });
+  res.json(transactions);
+});
+
+// ==================== FRONTEND ====================
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ==================== START ====================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 M-Pesa STK Push server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
